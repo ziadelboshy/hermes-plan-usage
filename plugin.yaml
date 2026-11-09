@@ -1,0 +1,35 @@
+manifest_version: 2
+name: plan-usage
+label: Plan Usage
+kind: standalone
+version: 0.2.0
+author: Ziad Osama El-Boshy (ziadelboshy)
+license: MIT
+homepage: https://github.com/ziadelboshy/hermes-plan-usage
+requires_hermes: ">=0.23.0"
+tags: [desktop, usage, quota, status-bar]
+description: >
+  Desktop status-bar chips for plan usage across providers: Claude and ChatGPT/Codex
+  5-hour/weekly windows for every account in Hermes's credential pool (each with its own
+  display name, default star and fallback warnings), Nous Portal credits, and month-to-date
+  API spend from optional Anthropic/OpenAI Admin keys. Usage windows come from Hermes's own
+  usage cache; the plugin never reads or sends a subscription token.
+provides_tools: []
+provides_hooks: []
+config_schema:
+  anthropic_admin_key:
+    type: secret
+    env: ANTHROPIC_ADMIN_KEY
+    label: Anthropic Admin key
+    description: >
+      Optional. An Anthropic Admin key (sk-ant-admin...) lets Plan Usage show month-to-date
+      API spend from the Anthropic cost report. A normal API key cannot read spend.
+    required: false
+  openai_admin_key:
+    type: secret
+    env: OPENAI_ADMIN_KEY
+    label: OpenAI Admin key
+    description: >
+      Optional. An OpenAI Admin key (sk-admin..., organization owner) lets Plan Usage show
+      month-to-date API spend from the OpenAI organization costs endpoint.
+    required: false

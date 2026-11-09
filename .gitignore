@@ -1,0 +1,14 @@
+# Personal settings never belong in the repo (the plugin keeps them in <HERMES_HOME>/plugin-data/plan-usage/)
+settings.json
+*.json.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,8 @@
+{
+  "name": "plan-usage",
+  "label": "Plan Usage",
+  "description": "Claude/Codex plan windows per account, Nous credits and Admin-key API spend",
+  "version": "0.2.0",
+  "api": "plugin_api.py",
+  "tab": { "path": "/plan-usage", "position": "end", "hidden": true }
+}
