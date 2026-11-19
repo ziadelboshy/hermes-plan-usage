@@ -271,28 +271,42 @@ function apiChip(k) {
 // ── default-account / fallback warnings ───────────────────────────────────────
 
 const WARN_AT = 90
-const WARNED_KEY = 'warned.v1'
+const WARNED_KEY = 'warned.v2'
+const SAME_WINDOW_MS = 2 * 3_600_000  // reset times this close belong to one window (shortest is 5h)
 
-/** Which limit window a warning belongs to: the reset time rounded to the hour (Hermes may
- *  recompute it a few seconds differently on each fetch), else the UTC day, so a warning shows
- *  once per window and at most once a day when Hermes reports no reset time. */
-function windowBucket(iso) {
+/** Storage mark for one warning: `<base>@<reset ms>`, or `<base>@day-<UTC date>` when Hermes
+ *  reports no reset time (then it shows at most once a day). */
+function warnMark(base, iso) {
   const t = iso ? Date.parse(iso) : NaN
-  if (Number.isFinite(t)) return new Date(Math.round(t / 3_600_000) * 3_600_000).toISOString().slice(0, 13)
-  return `day-${new Date().toISOString().slice(0, 10)}`
+  return Number.isFinite(t) ? `${base}@${t}` : `${base}@day-${new Date().toISOString().slice(0, 10)}`
 }
 
-function _warnedOnce(id) {
+/** Pure: has this warning already been shown for its limit window? Hermes recomputes the reset
+ *  time from the seconds left on every fetch, so it drifts by seconds; a fixed bucket (e.g. the
+ *  hour) still flips at its edge. Compare against earlier marks with a tolerance instead. */
+function alreadyWarned(seen, mark) {
+  const at = mark.lastIndexOf('@')
+  const base = mark.slice(0, at), t = Number(mark.slice(at + 1))
+  return seen.some(s => {
+    if (typeof s !== 'string') return false
+    const i = s.lastIndexOf('@')
+    if (s.slice(0, i) !== base) return false
+    const u = Number(s.slice(i + 1))
+    return Number.isFinite(t) && Number.isFinite(u) ? Math.abs(t - u) < SAME_WINDOW_MS : s === mark
+  })
+}
+
+function _warnedOnce(mark) {
   let seen = []
   try { seen = _storage ? (_storage.get(WARNED_KEY, []) || []) : [] } catch { seen = [] }
   if (!Array.isArray(seen)) seen = []
-  if (seen.includes(id)) return false
-  try { _storage?.set(WARNED_KEY, [...seen, id].slice(-60)) } catch { /* storage unavailable */ }
+  if (alreadyWarned(seen, mark)) return false
+  try { _storage?.set(WARNED_KEY, [...seen, mark].slice(-60)) } catch { /* storage unavailable */ }
   return true
 }
 
 /** Pure: which warnings this joined snapshot calls for. */
-function fallbackWarnings(views) {
+function fallbackWarnings(views, { nearLimit = false } = {}) {
   const out = []
   for (const key of ['codex', 'claude']) {
     const sec = views[key]
@@ -301,7 +315,7 @@ function fallbackWarnings(views) {
     if (!sec?.ok || !order || order.strategy !== 'fill_first') continue
     if (order.fallback_active) {
       out.push({
-        id: `switched:${key}:${order.default_name}:${windowBucket(order.default_resets_at)}`,
+        id: warnMark(`switched:${key}:${order.default_name}`, order.default_resets_at),
         kind: 'warning', persistent: true, title: `${family}: switched account`,
         message: `${order.default_name} is out. Hermes moves to ${order.in_use_name}` +
           (order.default_resets_at ? ` and goes back to ${order.default_name} when its limit ${fmtReset(order.default_resets_at)}.` : '.')
@@ -309,10 +323,11 @@ function fallbackWarnings(views) {
       continue
     }
     if (order.all_out) {
-      out.push({ id: `allout:${key}:${windowBucket(order.default_resets_at)}`, kind: 'error', persistent: true,
+      out.push({ id: warnMark(`allout:${key}`, order.default_resets_at), kind: 'error', persistent: true,
         title: `${family}: every account is out`, message: `No ${family} account has usage left. Hermes can't use ${family} until a limit resets.` })
       continue
     }
+    if (!nearLimit) continue  // "almost out" pop-ups are opt-in; the chips already show it
     const def = (sec.accounts || []).find(a => a.is_default)
     if (!def) continue
     const hot = (def.windows || []).map(w => fixWindow(null, w))
@@ -320,7 +335,7 @@ function fallbackWarnings(views) {
       .sort((a, b) => b.used_percent - a.used_percent)[0]
     if (!hot) continue
     out.push({
-      id: `near:${key}:${def.name}:${hot.label}:${windowBucket(hot.resets_at)}`,
+      id: warnMark(`near:${key}:${def.name}:${hot.label}`, hot.resets_at),
       kind: 'warning', persistent: true, title: `${family}: ${def.name} almost out`,
       message: `${def.name} is at ${Math.round(hot.used_percent)}% of its ${hot.label.toLowerCase()} limit. ` +
         (order.next_name
@@ -334,8 +349,8 @@ function fallbackWarnings(views) {
 function useFallbackWarnings(views, ready, data, options) {
   useEffect(() => {
     if (!ready) return
-    for (const w of fallbackWarnings(views)) {
-      if (_warnedOnce(w.id)) host.notify({ ...w, id: `plan-usage:${w.id}` })
+    for (const w of fallbackWarnings(views, { nearLimit: !!data?.warn_near_limit })) {
+      if (_warnedOnce(w.id)) host.notify({ ...w, id: `plan-usage:${w.id.slice(0, w.id.lastIndexOf('@'))}` })
     }
   }, [data, options, ready])  // views is derived from data + options
 }
@@ -528,6 +543,11 @@ function SettingsPage() {
       section('codex', accountRows('codex')),
       section('claude', accountRows('claude')),
       section('api', keyRows()),
+      jsx(ToggleRow, {
+        wide: true, label: 'Almost-out warnings',
+        description: `Pop up a warning when the default account passes ${WARN_AT}% of a limit. Off by default: the chips already show it. Account-switch and all-out warnings always show.`,
+        checked: !!draft.warn_near_limit, onChange: v => set(d => { d.warn_near_limit = !!v })
+      }),
       jsx(ListRow, {
         title: 'Refresh', description: 'How often the status bar asks for new numbers (60–1800 seconds).',
         action: jsx(Input, { className: 'w-24', type: 'number', min: 60, max: 1800, value: draft.poll_seconds, 'aria-label': 'Poll interval in seconds',
@@ -543,6 +563,9 @@ function SettingsPage() {
     ]
   })
 }
+
+// Pure helpers, for the offline tests (tests/js/warnings.test.mjs).
+export const _test = { warnMark, alreadyWarned, fallbackWarnings }
 
 export default {
   id: ID,

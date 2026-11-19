@@ -27,7 +27,8 @@ SECRET = "sk-ant-admin01-SECRET-VALUE"
 def test_config_defaults(api):
     cfg = api.load_config()  # nothing on disk yet
     assert cfg == {"sections": {"nous": True, "codex": True, "claude": True, "api": True},
-                   "names": {}, "key_names": {}, "disabled": [], "poll_seconds": 120}
+                   "names": {}, "key_names": {}, "disabled": [], "poll_seconds": 120,
+                   "warn_near_limit": False}
     assert api.normalize_config("garbage") == cfg
     assert api.normalize_config(None) == cfg
 
@@ -50,6 +51,8 @@ def test_normalize_config_validation(api):
     assert "admin_keys" not in cfg and "unknown" not in cfg
     assert api.normalize_config({"poll_seconds": 99999})["poll_seconds"] == 1800
     assert api.normalize_config({"poll_seconds": "x"})["poll_seconds"] == 120
+    assert api.normalize_config({"warn_near_limit": True})["warn_near_limit"] is True
+    assert api.normalize_config({"warn_near_limit": "yes"})["warn_near_limit"] is False  # only a real true opts in
     assert api.normalize_config({"names": {"anthropic:a": "x" * 99}})["names"]["anthropic:a"] == "x" * 40
 
 
@@ -402,6 +405,15 @@ def test_sections_switched_off_are_not_built(api, fake_module, monkeypatch):
     api.save_config({"sections": {"claude": True, "codex": False, "nous": True, "api": False}})
     out = api.build_status()
     assert called == ["pool", "nous"] and {"claude", "nous"} <= set(out) and "codex" not in out
+
+
+def test_status_carries_the_near_limit_switch(api, fake_module, monkeypatch):
+    monkeypatch.setattr(api, "pool_accounts", lambda *a, **k: {"ok": True, "accounts": []})
+    monkeypatch.setattr(api, "_nous_state", lambda force: {"ok": True})
+    monkeypatch.setattr(api, "_api_state", lambda cfg, force: {"ok": True, "keys": []})
+    assert api.build_status()["warn_near_limit"] is False  # off by default
+    api.save_config({"warn_near_limit": True})
+    assert api.build_status()["warn_near_limit"] is True
 
 
 # ── Nous Portal ──────────────────────────────────────────────────────────────

@@ -62,11 +62,13 @@ holds the two optional secrets:
 Hermes stores them through its own credential route; the plugin reads them back through Hermes and
 never shows them. A normal API key cannot read spend.
 
-**Warnings.** When the default account reaches 90% of a limit, a notification names the account
-Hermes will move to, or says there is none. When the default account is out and Hermes is on a
-fallback, a second notification says so and when the default comes back. Each warning shows once per
-limit window (when Hermes reports no reset time, at most once per UTC day). They only warn; Hermes
-switches accounts on its own.
+**Warnings.** When the default account is out and Hermes is on a fallback, a notification says so
+and when the default comes back; when every account is out, another says that. Optional
+(Settings -> Plugins -> Plan Usage -> *Almost-out warnings*, off by default, since the chips already
+show it): when the default account reaches 90% of a limit, a notification names the account Hermes
+will move to, or says there is none. Each warning shows once per limit window, even though Hermes
+recomputes the reset time slightly differently on each fetch (when Hermes reports no reset time, at
+most once per UTC day). They only warn; Hermes switches accounts on its own.
 
 **Adding and removing accounts** stays with Hermes:
 
@@ -110,7 +112,7 @@ hermes auth remove anthropic "Work"          # index, entry id or exact label
 **What it writes**
 
 - `<HERMES_HOME>/plugin-data/plan-usage/settings.json`: section and account switches, display
-  names, poll interval. No secrets.
+  names, poll interval, the almost-out warning switch. No secrets.
 - Desktop plugin storage (`hermes.plugin.plan-usage.*`): the ids of warnings already shown.
 - Only when you click the star: the credential-pool order, through Hermes's
   `CredentialPool.move_entry` (Hermes writes the order to the auth store that owns the accounts).
@@ -170,14 +172,15 @@ __init__.py               register(): a no-op, the plugin has no tools or hooks
 dashboard/plugin_api.py   backend routes under /api/plugins/plan-usage/*
 dashboard/manifest.json   backend manifest
 desktop/plugin.js         desktop half: status-bar chips, Settings → Plugins page, palette commands
-tests/                    offline pytest suite
+tests/                    offline pytest suite; tests/js/ has node:test tests for the warnings
 ```
 
 The tests are offline (no network, no real credentials, no real Hermes home; Hermes core modules
-are faked) and need only `pytest`:
+are faked) and need only `pytest` (plus Node 20.6+ for the JS warning tests):
 
 ```bash
 python -m pytest -q
+node --import ./tests/js/register.mjs --test tests/js/warnings.test.mjs   # Node 20.6+
 ```
 
 They also pass with a Hermes checkout on `PYTHONPATH`. Validate the package the way the catalog

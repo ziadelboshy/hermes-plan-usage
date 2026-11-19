@@ -73,6 +73,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "key_names": {},        # ANTHROPIC_ADMIN_KEY / OPENAI_ADMIN_KEY -> display name
     "disabled": [],         # account keys and Admin-key names switched off
     "poll_seconds": 120,
+    "warn_near_limit": False,  # pop up a warning when the default account passes 90% (off: chips show it)
 }
 
 NOUS_TTL_S = 300
@@ -135,6 +136,7 @@ def normalize_config(raw: Any) -> dict:
         cfg["poll_seconds"] = max(60, min(1800, int(raw.get("poll_seconds", 120))))
     except (TypeError, ValueError):
         cfg["poll_seconds"] = 120
+    cfg["warn_near_limit"] = raw.get("warn_near_limit") is True
     return cfg
 
 
@@ -531,6 +533,7 @@ def build_status(force: bool = False) -> dict:
     cfg = load_config()
     disabled = set(cfg["disabled"])
     out: dict[str, Any] = {"sections": cfg["sections"], "poll_seconds": cfg["poll_seconds"],
+                           "warn_near_limit": cfg["warn_near_limit"],
                            "generated_at": datetime.now(timezone.utc).isoformat()}
     for section, provider in POOL_PROVIDERS.items():
         if cfg["sections"][section]:
